@@ -295,16 +295,71 @@ void core1Task(void *pvParameters) {
 
 // --- WEB INTERFACE ---
 String getHTML() {
-  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><style>body{background:#000; color:#0f0; font-family:monospace; text-align:center;} .btn{padding:15px; margin:5px; background:#111; color:#0f0; border:1px solid #0f0; cursor:pointer; width:150px;} .net{padding:10px; border-bottom:1px solid #222; text-align:left;} .ai-score{color:#ff0; font-size:12px;}</style>";
-  html += "<script>function start(t){fetch('/start?type='+t);} function scan(){fetch('/scan').then(r=>r.text()).then(d=>{document.getElementById('networks').innerHTML=d;});}</script></head><body>";
-  html += "<h1>🐉 EJDER S3 AI v3.0</h1><div id='status'>ESP32 S3 AI System Ready...</div><br>";
-  html += "<button class='btn' onclick='scan()'>AI SCAN</button><br>";
-  html += "<button class='btn' onclick=\"start('deauth')\">DEAUTH</button>";
-  html += "<button class='btn' onclick=\"start('burst')\">BURST</button><br>";
-  html += "<button class='btn' onclick=\"start('beacon')\">BEACON</button>";
-  html += "<button class='btn' onclick=\"start('probe')\">PROBE</button><br>";
-  html += "<button class='btn' style='color:red; border-color:red;' onclick=\"start('stop')\">STOP ALL</button>";
-  html += "<h3>NETWORKS (AI SCORED):</h3><div id='networks'></div></body></html>";
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0'>";
+  html += "<style>";
+  html += "body{background:#050505; color:#00ff41; font-family:'Courier New', monospace; margin:0; padding:10px; text-align:center;}";
+  html += ".header{border-bottom:2px solid #00ff41; padding:10px; margin-bottom:15px; text-transform:uppercase;}";
+  html += ".btn-group{display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 15px;}";
+  html += ".btn{background:#111; color:#00ff41; border:1px solid #00ff41; padding:10px 5px; cursor:pointer; flex: 1 1 40%; font-weight:bold; font-size:12px; transition:0.2s;}";
+  html += ".btn:active{background:#00ff41; color:#000;}";
+  html += ".btn-stop{border-color:#ff0000; color:#ff0000;}";
+  html += ".btn-stop:active{background:#ff0000; color:#fff;}";
+  
+  // Tek sıra (Single Line) düzeni için CSS
+  html += ".net-list{text-align:left; border-top:1px solid #222;}";
+  html += ".net-item{display: flex; align-items: center; justify-content: space-between; padding: 12px 10px; border-bottom: 1px solid #222; cursor: pointer; white-space: nowrap; overflow: hidden;}";
+  html += ".net-item:hover{background: #0f0f0f;}";
+  html += ".selected{background: #2a0000 !important; border: 1px solid #ff0000 !important;}";
+  html += ".ssid-name{font-weight: bold; overflow: hidden; text-overflow: ellipsis; max-width: 50%;}";
+  html += ".net-stats{font-size: 11px; color: #888;}";
+  html += ".ai-badge{background:#ffd700; color:#000; font-size:10px; padding:2px 4px; border-radius:2px; font-weight:bold;}";
+  
+  html += "#status-bar{position:fixed; bottom:0; left:0; width:100%; background:#00ff41; color:#000; font-size:11px; font-weight:bold; padding:4px 0;}";
+  html += "</style>";
+  
+  html += "<script>";
+  html += "let selectedIdx = -1;";
+  html += "function selectNet(idx){";
+  html += "  selectedIdx = idx;";
+  html += "  document.querySelectorAll('.net-item').forEach(el => el.classList.remove('selected'));";
+  html += "  document.getElementById('net-'+idx).classList.add('selected');";
+  html += "  fetch('/select?index='+idx);";
+  html += "  document.getElementById('stat').innerText = 'TARGET SET: #' + idx;";
+  html += "}";
+  
+  html += "function startAttack(type){";
+  html += "  fetch('/start?type='+type);";
+  html += "  document.getElementById('stat').innerText = 'EXEC: ' + type.toUpperCase();";
+  html += "}";
+  
+  html += "function runScan(){";
+  html += "  document.getElementById('stat').innerText = 'SCANNING...';";
+  html += "  fetch('/scan').then(r=>r.text()).then(d=>{";
+  html += "    document.getElementById('networks').innerHTML = d;";
+  html += "    document.getElementById('stat').innerText = 'SCAN COMPLETE';";
+  html += "  });";
+  html += "}";
+  html += "</script></head><body>";
+  
+  html += "<div class='header'>EJDER S3 v3.0 AI</div>";
+  
+  html += "<div class='btn-group'>";
+  html += "  <button class='btn' onclick='runScan()'>AI SCAN</button>";
+  html += "  <button class='btn btn-stop' onclick=\"startAttack('stop')\">STOP ALL</button>";
+  html += "</div>";
+  
+  html += "<div class='btn-group'>";
+  html += "  <button class='btn' onclick=\"startAttack('deauth')\">DEAUTH</button>";
+  html += "  <button class='btn' onclick=\"startAttack('burst')\">BURST</button>";
+  html += "  <button class='btn' onclick=\"startAttack('beacon')\">BEACON</button>";
+  html += "  <button class='btn' onclick=\"startAttack('probe')\">PROBE</button>";
+  html += "</div>";
+  
+  html += "<div id='networks' class='net-list'>[PRESS AI SCAN]</div>";
+  html += "<div id='status-bar'>SYSTEM STATUS: <span id='stat'>IDLE</span></div>";
+  
+  html += "</body></html>";
   return html;
 }
 
@@ -319,41 +374,42 @@ void setup() {
   
   server.on("/", []() { server.send(200, "text/html", getHTML()); });
   
-  server.on("/scan", []() {
+ server.on("/scan", []() {
     if (xSemaphoreTake(xNetworkSemaphore, portMAX_DELAY) == pdTRUE) {
       int n = WiFi.scanNetworks();
       networks.clear(); 
       String res = "";
       
       for (int i = 0; i < n && i < 30; i++) {
-        NetworkInfo net; 
-        net.ssid = WiFi.SSID(i); 
-        memcpy(net.bssid, WiFi.BSSID(i), 6); 
-        net.channel = WiFi.channel(i); 
+        NetworkInfo net;
+        net.ssid = WiFi.SSID(i);
+        if(net.ssid == "") net.ssid = "[HIDDEN]";
+        
+        memcpy(net.bssid, WiFi.BSSID(i), 6);
+        net.channel = WiFi.channel(i);
         net.rssi = WiFi.RSSI(i);
         
         // AI skorunu hesapla
         net.ai_score = calculateAIScore(net.rssi, net.channel, net.ssid);
         net.is_vulnerable = net.ai_score > 0.7;
-        
         networks.push_back(net);
-        
-        // AI skorunu göster
-        String aiClass = net.is_vulnerable ? "color:#f00;" : "color:#ff0;";
-        res += "<div class='net' onclick=\"fetch('/select?index="+String(i)+"')\">" + net.ssid + 
-               " ["+String(net.rssi)+"dBm] <span class='ai-score' style='"+aiClass+"'>AI:" + 
-               String(net.ai_score, 2) + "</span></div>";
+
+        // Arayüz için tek satır HTML
+        String aiColor = net.is_vulnerable ? "color:#ff0000;" : "color:#ffd700;";
+        res += "<div class='net-item' id='net-" + String(i) + "' onclick='selectNet(" + String(i) + ")'>";
+        res += "  <span class='ssid-name'>" + net.ssid + "</span>";
+        res += "  <span class='net-stats'>CH:" + String(net.channel) + " | " + String(net.rssi) + "dBm</span>";
+        res += "  <span class='ai-badge' style='" + aiColor + "'>AI:" + String(net.ai_score, 1) + "</span>";
+        res += "</div>";
       }
       
-      // AI modu aktifse en iyi hedefi otomatik seç
+      // AI modu aktifse en iyi hedefi otomatik belirle (Arka planda)
       if (aiModeActive && !networks.empty()) {
         int bestTarget = selectBestTarget();
         if (bestTarget != -1) {
           selectedNetwork = bestTarget;
           networkSelected = true;
-          res += "<div style='color:#0ff;padding:10px;'>AI Selected: " + 
-                 networks[bestTarget].ssid + " (Score: " + 
-                 String(networks[bestTarget].ai_score, 2) + ")</div>";
+          res += "<div style='color:#0ff; font-size:10px; padding:5px;'>AI Recommended: " + networks[bestTarget].ssid + "</div>";
         }
       }
       
@@ -361,7 +417,6 @@ void setup() {
       server.send(200, "text/html", res);
     }
   });
-  
   server.on("/select", []() { 
     if (xSemaphoreTake(xNetworkSemaphore, portMAX_DELAY) == pdTRUE) {
       selectedNetwork = server.arg("index").toInt(); 
